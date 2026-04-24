@@ -1,11 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Values.fullnameOverride | default "oc-scp" }}
+  name: {{ .Values.fullnameOverride | default "scp" }}
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ .Values.fullnameOverride | default "oc-scp" }}
-    app.kubernetes.io/name: oc-scp
+    app: {{ .Values.fullnameOverride | default "scp" }}
+    app.kubernetes.io/name: scp
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
@@ -15,7 +15,7 @@ spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ .Values.fullnameOverride | default "oc-scp" }}
+      app: {{ .Values.fullnameOverride | default "scp" }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       labels:
-        app: {{ .Values.fullnameOverride | default "oc-scp" }}
+        app: {{ .Values.fullnameOverride | default "scp" }}
         network-function: scp
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -39,9 +39,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 2000
-      # Init container — wait for NRF to be ready before SCP starts
-      # SCP needs NRF available to perform discovery; without this, SCP pods
-      # would start up and immediately fail their readiness probes
+      # Init container — wait for NRF before SCP starts
+      # SCP needs NRF available to perform discovery on behalf of NF consumers
       initContainers:
         - name: wait-for-nrf
           image: busybox:1.35
@@ -49,14 +48,14 @@ spec:
             - sh
             - -c
             - |
-              echo "Waiting for NRF service to be available..."
-              until wget -qO- http://oc-nrf.{{ .Release.Namespace }}.svc.cluster.local:8080/healthz; do
+              echo "Waiting for NRF to be available..."
+              until wget -qO- http://nrf.{{ .Release.Namespace }}.svc.cluster.local:8080/healthz; do
                 echo "NRF not ready — retrying in 5s"
                 sleep 5
               done
               echo "NRF is ready. Starting SCP."
       containers:
-        - name: oc-scp
+        - name: scp
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
@@ -107,11 +106,11 @@ metadata:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ .Values.fullnameOverride | default "oc-scp" }}-pdb
+  name: {{ .Values.fullnameOverride | default "scp" }}-pdb
   namespace: {{ .Release.Namespace }}
 spec:
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   selector:
     matchLabels:
-      app: {{ .Values.fullnameOverride | default "oc-scp" }}
+      app: {{ .Values.fullnameOverride | default "scp" }}
 {{- end }}
