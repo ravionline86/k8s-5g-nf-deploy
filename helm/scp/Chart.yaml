@@ -1,12 +1,13 @@
 apiVersion: v2
-name: oc-scp
+name: scp
 description: >
-  Helm chart for Oracle OC-SCP (Service Communication Proxy) — 5G Core SBA component.
-  Implements Model D indirect communication: routes NF consumer requests via SCP,
-  which performs NRF discovery on behalf of the consumer per 3GPP TS 23.501.
+  Helm chart for 5G Core SCP (Service Communication Proxy).
+  Implements Model D indirect communication — routes NF consumer requests
+  via SCP, which performs NRF discovery on behalf of the consumer
+  per 3GPP TS 29.500 and 3GPP TS 23.501.
 type: application
 version: 1.0.0
-appVersion: "25.1.200"
+appVersion: "1.0.0"
 keywords:
   - 5g
   - scp
@@ -15,12 +16,14 @@ keywords:
   - sba
   - model-d
   - 3gpp
+  - free5gc
 home: https://github.com/ravionline86/k8s-5g-nf-deploy
 sources:
   - https://github.com/ravionline86/k8s-5g-nf-deploy
+  - https://github.com/free5gc/free5gc
 maintainers:
   - name: Ravinder Kumar
     email: ravionline86@gmail.com
 annotations:
   network-function: scp
-  release: OC-SCP-25.1.200
+  spec: 3GPP-TS-29.500
