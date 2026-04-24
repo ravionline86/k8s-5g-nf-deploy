@@ -1,8 +1,7 @@
 # namespace.yaml
 # Creates the 5g-core namespace with resource guardrails.
 # ResourceQuota prevents any single namespace from exhausting cluster resources.
-# LimitRange sets default CPU/memory requests on pods that don't specify them.
-# This mirrors production namespace hygiene in Rakuten and KT deployments.
+# LimitRange sets default CPU/memory on pods that don't specify them explicitly.
 
 apiVersion: v1
 kind: Namespace
@@ -12,7 +11,7 @@ metadata:
     app.kubernetes.io/managed-by: helm
     network-function-domain: core
     environment: production
-    project: 5g-nf-deploy
+    project: k8s-5g-nf-deploy
 
 ---
 apiVersion: v1
@@ -62,4 +61,4 @@ metadata:
     app.kubernetes.io/managed-by: helm
     network-function-domain: core
     environment: staging
-    project: 5g-nf-deploy
+    project: k8s-5g-nf-deploy
