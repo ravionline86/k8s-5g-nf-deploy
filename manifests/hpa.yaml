@@ -1,25 +1,23 @@
 # hpa.yaml
-# HorizontalPodAutoscaler for OC-NRF and OC-SCP.
+# HorizontalPodAutoscaler for NRF and SCP.
 # In carrier environments, SCP and NRF must scale rapidly during:
 #   - Mass attach storms (e.g. after a power outage, all UEs re-register simultaneously)
 #   - Peak traffic windows (busy hour signalling bursts)
-# HPA ensures pods are added automatically when CPU/memory thresholds are crossed,
-# and scaled back in during off-peak to reduce cloud compute costs.
 
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: oc-nrf-hpa
+  name: nrf-hpa
   namespace: 5g-core
   labels:
-    app: oc-nrf
+    app: nrf
     network-function: nrf
-    project: 5g-nf-deploy
+    project: k8s-5g-nf-deploy
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: oc-nrf
+    name: nrf
   minReplicas: 2
   maxReplicas: 5
   metrics:
@@ -28,51 +26,51 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 60    # scale up when avg CPU across pods > 60%
+          averageUtilization: 60
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 70    # scale up when avg memory > 70%
+          averageUtilization: 70
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 60    # wait 60s before scaling up again
+      stabilizationWindowSeconds: 60
       policies:
         - type: Pods
-          value: 2                      # add max 2 pods per scale event
+          value: 2
           periodSeconds: 60
     scaleDown:
       stabilizationWindowSeconds: 300   # wait 5 min before scaling down (avoid flapping)
       policies:
         - type: Pods
-          value: 1                      # remove max 1 pod per scale-down event
+          value: 1
           periodSeconds: 120
 
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: oc-scp-hpa
+  name: scp-hpa
   namespace: 5g-core
   labels:
-    app: oc-scp
+    app: scp
     network-function: scp
-    project: 5g-nf-deploy
+    project: k8s-5g-nf-deploy
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: oc-scp
+    name: scp
   minReplicas: 2
-  maxReplicas: 6                        # SCP handles all NF-to-NF traffic, needs headroom
+  maxReplicas: 6                        # SCP handles all NF-to-NF traffic, needs higher ceiling
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 55        # SCP is latency-sensitive, scale earlier than NRF
+          averageUtilization: 55        # SCP is latency-sensitive — scale earlier than NRF
     - type: Resource
       resource:
         name: memory
@@ -81,7 +79,7 @@ spec:
           averageUtilization: 65
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 30    # SCP needs faster scale-up (it's in the request path)
+      stabilizationWindowSeconds: 30    # faster scale-up — SCP is in the live request path
       policies:
         - type: Pods
           value: 2
