@@ -1,11 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "oc-nrf.fullname" . }}
+  name: {{ .Values.fullnameOverride | default "nrf" }}
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ include "oc-nrf.fullname" . }}
-    app.kubernetes.io/name: oc-nrf
+    app: {{ .Values.fullnameOverride | default "nrf" }}
+    app.kubernetes.io/name: nrf
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
@@ -14,17 +14,17 @@ spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "oc-nrf.fullname" . }}
-  # Rolling update strategy — critical for zero-downtime upgrades in carrier environments
+      app: {{ .Values.fullnameOverride | default "nrf" }}
+  # Rolling update — zero downtime during NF upgrades
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1         # allow 1 extra pod during upgrade
+      maxSurge: 1
       maxUnavailable: 0   # never take a pod down before a new one is ready
   template:
     metadata:
       labels:
-        app: {{ include "oc-nrf.fullname" . }}
+        app: {{ .Values.fullnameOverride | default "nrf" }}
         network-function: nrf
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -35,13 +35,12 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
-      # Security context — run as non-root (security best practice)
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 2000
       containers:
-        - name: oc-nrf
+        - name: nrf
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
@@ -51,11 +50,9 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
-          # Environment variables from ConfigMap
           envFrom:
             - configMapRef:
                 name: {{ .Values.configMapRef }}
-          # Individual env overrides from values.yaml
           env:
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
@@ -67,7 +64,6 @@ spec:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
-          # Mount NRF config file from ConfigMap
           volumeMounts:
             - name: nrf-config
               mountPath: /etc/nf/config
@@ -76,7 +72,6 @@ spec:
         - name: nrf-config
           configMap:
             name: {{ .Values.configMapRef }}
-      # Pod anti-affinity — spread NRF pods across nodes for HA
       {{- with .Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
@@ -89,8 +84,6 @@ kind: ServiceAccount
 metadata:
   name: {{ .Values.serviceAccount.name }}
   namespace: {{ .Release.Namespace }}
-  labels:
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 ---
@@ -98,19 +91,11 @@ metadata:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "oc-nrf.fullname" . }}-pdb
+  name: {{ .Values.fullnameOverride | default "nrf" }}-pdb
   namespace: {{ .Release.Namespace }}
 spec:
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   selector:
     matchLabels:
-      app: {{ include "oc-nrf.fullname" . }}
-{{- end }}
-
-{{- define "oc-nrf.fullname" -}}
-{{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- printf "%s-%s" .Release.Name .Chart.Name | trunc 63 | trimSuffix "-" }}
-{{- end }}
+      app: {{ .Values.fullnameOverride | default "nrf" }}
 {{- end }}
