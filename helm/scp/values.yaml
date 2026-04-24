@@ -1,16 +1,16 @@
-# values.yaml — OC-SCP Helm chart defaults
+# values.yaml — SCP Helm chart defaults
 # SCP is in the critical request path (all NF-to-NF traffic flows through it in Model D)
 # Resources and scaling thresholds are more aggressive than NRF
 
 replicaCount: 2
 
 image:
-  repository: nginx                  # stub image simulating SCP HTTP/2 proxy
+  repository: nginx                  # nginx stub simulating SCP HTTP/2 proxy
   tag: "1.25-alpine"
   pullPolicy: IfNotPresent
 
 nameOverride: ""
-fullnameOverride: "oc-scp"
+fullnameOverride: "scp"
 
 service:
   type: ClusterIP
@@ -19,12 +19,12 @@ service:
 
 # NRF endpoint — SCP uses this to perform NF discovery on behalf of consumers
 nrf:
-  endpoint: "http://oc-nrf.5g-core.svc.cluster.local:8080"
+  endpoint: "http://nrf.5g-core.svc.cluster.local:8080"
   discoveryURI: "/nnrf-disc/v1/nf-instances"
 
 resources:
   requests:
-    cpu: 500m                          # SCP needs more CPU than NRF (proxy + routing logic)
+    cpu: 500m                          # SCP needs more CPU (proxy + routing logic)
     memory: 512Mi
   limits:
     cpu: "2"
@@ -33,7 +33,7 @@ resources:
 autoscaling:
   enabled: true
   minReplicas: 2
-  maxReplicas: 6                       # SCP handles all inter-NF traffic, higher ceiling
+  maxReplicas: 6
   targetCPUUtilizationPercentage: 55   # scale earlier — SCP is latency-sensitive
   targetMemoryUtilizationPercentage: 65
 
@@ -67,7 +67,7 @@ affinity:
               - key: app
                 operator: In
                 values:
-                  - oc-scp
+                  - scp
           topologyKey: kubernetes.io/hostname
 
 env:
@@ -76,13 +76,13 @@ env:
   SCP_LB_POLICY: "round-robin"
   SCP_RETRY_COUNT: "3"
   SCP_TIMEOUT_MS: "5000"
-  NRF_ENDPOINT: "http://oc-nrf.5g-core.svc.cluster.local:8080"
+  NRF_ENDPOINT: "http://nrf.5g-core.svc.cluster.local:8080"
 
-configMapRef: oc-scp-config
+configMapRef: scp-config
 
 serviceAccount:
   create: true
-  name: "oc-scp-sa"
+  name: "scp-sa"
 
 serviceMonitor:
   enabled: true
@@ -99,4 +99,3 @@ podLabels:
   network-function: scp
   sba-component: "true"
   model-d: "true"
-  release: "25.1.200"
