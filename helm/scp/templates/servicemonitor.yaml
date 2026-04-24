@@ -2,16 +2,16 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ .Values.fullnameOverride | default "oc-scp" }}-monitor
+  name: {{ .Values.fullnameOverride | default "scp" }}-monitor
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ .Values.fullnameOverride | default "oc-scp" }}
+    app: {{ .Values.fullnameOverride | default "scp" }}
     network-function: scp
     release: prometheus
 spec:
   selector:
     matchLabels:
-      app: {{ .Values.fullnameOverride | default "oc-scp" }}
+      app: {{ .Values.fullnameOverride | default "scp" }}
   endpoints:
     - port: metrics
       path: {{ .Values.serviceMonitor.path }}
