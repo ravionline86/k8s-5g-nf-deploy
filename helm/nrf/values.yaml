@@ -1,25 +1,20 @@
-# values.yaml — OC-NRF Helm chart defaults
-# Override these per environment using:
-#   helm install oc-nrf helm/nrf -f my-env-values.yaml
+# values.yaml — NRF Helm chart defaults
+# Override per environment: helm install nrf helm/nrf -f my-env-values.yaml
 
 replicaCount: 2
 
 image:
-  repository: nginx                  # stub image simulating NRF HTTP/2 SBI endpoint
+  repository: nginx                  # nginx stub simulating NRF HTTP/2 SBI endpoint
   tag: "1.25-alpine"
   pullPolicy: IfNotPresent
 
 nameOverride: ""
-fullnameOverride: "oc-nrf"
+fullnameOverride: "nrf"
 
 service:
   type: ClusterIP
   port: 8080
   targetPort: 80
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "9090"
-    prometheus.io/path: "/metrics"
 
 resources:
   requests:
@@ -36,8 +31,8 @@ autoscaling:
   targetCPUUtilizationPercentage: 60
   targetMemoryUtilizationPercentage: 70
 
-# Readiness probe — K8s will not route traffic to pod until this passes
-# In real OC-NRF, this hits the /nnrf-nfm/v1/nf-instances health endpoint
+# Readiness probe — K8s will not route traffic until this passes
+# In a real NRF this would hit /nnrf-nfm/v1/nf-instances
 readinessProbe:
   httpGet:
     path: /healthz
@@ -55,12 +50,12 @@ livenessProbe:
   periodSeconds: 15
   failureThreshold: 3
 
-# Pod disruption budget — ensure at least 1 NRF pod stays up during rolling upgrades
+# PodDisruptionBudget — ensure at least 1 NRF pod stays up during rolling upgrades
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
-# Node affinity — prefer scheduling NRF on nodes with telecom-workload label
+# Pod anti-affinity — spread NRF pods across different nodes for HA
 affinity:
   podAntiAffinity:
     preferredDuringSchedulingIgnoredDuringExecution:
@@ -71,24 +66,22 @@ affinity:
               - key: app
                 operator: In
                 values:
-                  - oc-nrf
-          topologyKey: kubernetes.io/hostname   # spread NRF pods across different nodes
+                  - nrf
+          topologyKey: kubernetes.io/hostname
 
-# Environment variables injected into the NRF container
 env:
   NRF_PORT: "8080"
   NRF_LOG_LEVEL: "INFO"
   NF_HEARTBEAT_INTERVAL: "30"
   NRF_CACHE_TTL: "60"
 
-# ConfigMap reference
-configMapRef: oc-nrf-config
+configMapRef: nrf-config
 
 serviceAccount:
   create: true
-  name: "oc-nrf-sa"
+  name: "nrf-sa"
 
-# Prometheus ServiceMonitor (requires Prometheus Operator in cluster)
+# Prometheus ServiceMonitor (requires Prometheus Operator)
 serviceMonitor:
   enabled: true
   interval: 30s
@@ -103,4 +96,3 @@ podAnnotations:
 podLabels:
   network-function: nrf
   sba-component: "true"
-  release: "25.1.200"
