@@ -1,0 +1,267 @@
+// Jenkinsfile — CI/CD pipeline for k8s-5g-nf-deploy
+// Pipeline stages: Checkout → Lint → Dry-Run → Deploy Staging → Smoke Test → Deploy Production
+//
+// This pipeline mirrors the release workflow used in Oracle OC-NRF/SCP deployments:
+// - Staging deploy first, validate, then promote to production
+// - helm upgrade --install ensures idempotent deployments (safe to re-run)
+// - Automatic rollback if smoke tests fail
+
+pipeline {
+    agent any
+
+    // Parameters allow triggering the pipeline for a specific NF or both
+    parameters {
+        choice(
+            name: 'DEPLOY_TARGET',
+            choices: ['both', 'nrf-only', 'scp-only'],
+            description: 'Which Network Functions to deploy'
+        )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: '1.25-alpine',
+            description: 'Container image tag to deploy'
+        )
+        booleanParam(
+            name: 'SKIP_STAGING',
+            defaultValue: false,
+            description: 'Skip staging deploy and go directly to production (use with caution)'
+        )
+    }
+
+    environment {
+        KUBE_NAMESPACE_PROD    = "5g-core"
+        KUBE_NAMESPACE_STAGING = "5g-core-staging"
+        HELM_RELEASE_NRF       = "oc-nrf"
+        HELM_RELEASE_SCP       = "oc-scp"
+        HELM_CHART_NRF         = "helm/nrf"
+        HELM_CHART_SCP         = "helm/scp"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                echo "Checking out repository..."
+                checkout scm
+                sh "git log --oneline -5"
+            }
+        }
+
+        stage('Helm Lint') {
+            steps {
+                echo "Linting Helm charts..."
+                script {
+                    if (params.DEPLOY_TARGET != 'scp-only') {
+                        sh "helm lint ${HELM_CHART_NRF} --values ${HELM_CHART_NRF}/values.yaml"
+                    }
+                    if (params.DEPLOY_TARGET != 'nrf-only') {
+                        sh "helm lint ${HELM_CHART_SCP} --values ${HELM_CHART_SCP}/values.yaml"
+                    }
+                }
+                echo "Helm lint passed."
+            }
+        }
+
+        stage('Validate Manifests') {
+            steps {
+                echo "Validating raw Kubernetes manifests..."
+                sh """
+                    kubectl apply --dry-run=client -f manifests/namespace.yaml
+                    kubectl apply --dry-run=client -f manifests/configmap.yaml
+                    kubectl apply --dry-run=client -f manifests/hpa.yaml
+                """
+                echo "Manifest validation passed."
+            }
+        }
+
+        stage('Helm Dry-Run (Staging)') {
+            steps {
+                echo "Running Helm dry-run against staging namespace..."
+                script {
+                    if (params.DEPLOY_TARGET != 'scp-only') {
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE_NRF} ${HELM_CHART_NRF} \
+                              --namespace ${KUBE_NAMESPACE_STAGING} \
+                              --values ${HELM_CHART_NRF}/values.yaml \
+                              --set image.tag=${params.IMAGE_TAG} \
+                              --dry-run
+                        """
+                    }
+                    if (params.DEPLOY_TARGET != 'nrf-only') {
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE_SCP} ${HELM_CHART_SCP} \
+                              --namespace ${KUBE_NAMESPACE_STAGING} \
+                              --values ${HELM_CHART_SCP}/values.yaml \
+                              --set image.tag=${params.IMAGE_TAG} \
+                              --dry-run
+                        """
+                    }
+                }
+                echo "Dry-run completed successfully."
+            }
+        }
+
+        stage('Deploy to Staging') {
+            when {
+                expression { return !params.SKIP_STAGING }
+            }
+            steps {
+                echo "Deploying to staging namespace: ${KUBE_NAMESPACE_STAGING}"
+
+                // Apply base manifests to staging namespace
+                sh """
+                    kubectl apply -f manifests/configmap.yaml \
+                      --namespace ${KUBE_NAMESPACE_STAGING}
+                """
+
+                script {
+                    if (params.DEPLOY_TARGET != 'scp-only') {
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE_NRF} ${HELM_CHART_NRF} \
+                              --namespace ${KUBE_NAMESPACE_STAGING} \
+                              --values ${HELM_CHART_NRF}/values.yaml \
+                              --set image.tag=${params.IMAGE_TAG} \
+                              --wait --timeout 5m
+                        """
+                    }
+                    if (params.DEPLOY_TARGET != 'nrf-only') {
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE_SCP} ${HELM_CHART_SCP} \
+                              --namespace ${KUBE_NAMESPACE_STAGING} \
+                              --values ${HELM_CHART_SCP}/values.yaml \
+                              --set image.tag=${params.IMAGE_TAG} \
+                              --wait --timeout 5m
+                        """
+                    }
+                }
+                echo "Staging deploy complete."
+            }
+        }
+
+        stage('Smoke Test (Staging)') {
+            when {
+                expression { return !params.SKIP_STAGING }
+            }
+            steps {
+                echo "Running smoke tests against staging..."
+                script {
+                    try {
+                        sh """
+                            # Verify pods are running
+                            kubectl get pods -n ${KUBE_NAMESPACE_STAGING} -l network-function=nrf
+                            kubectl get pods -n ${KUBE_NAMESPACE_STAGING} -l network-function=scp
+
+                            # Check NRF readiness
+                            kubectl wait --for=condition=ready pod \
+                              -l app=oc-nrf \
+                              -n ${KUBE_NAMESPACE_STAGING} \
+                              --timeout=120s
+
+                            # Check SCP readiness
+                            kubectl wait --for=condition=ready pod \
+                              -l app=oc-scp \
+                              -n ${KUBE_NAMESPACE_STAGING} \
+                              --timeout=120s
+
+                            echo "Smoke tests PASSED — all pods ready in staging"
+                        """
+                    } catch (Exception e) {
+                        echo "Smoke tests FAILED — triggering rollback in staging"
+                        sh """
+                            helm rollback ${HELM_RELEASE_NRF} --namespace ${KUBE_NAMESPACE_STAGING} || true
+                            helm rollback ${HELM_RELEASE_SCP} --namespace ${KUBE_NAMESPACE_STAGING} || true
+                        """
+                        error("Smoke tests failed. Production deploy aborted. Staging rolled back.")
+                    }
+                }
+            }
+        }
+
+        stage('Approval Gate') {
+            when {
+                expression { return !params.SKIP_STAGING }
+            }
+            steps {
+                // Manual approval before production deploy
+                // In carrier environments, this is the change window gate
+                input message: "Staging tests passed. Approve deployment to PRODUCTION?",
+                      ok: "Deploy to Production",
+                      submitter: "ops-team"
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                echo "Deploying to production namespace: ${KUBE_NAMESPACE_PROD}"
+
+                sh """
+                    kubectl apply -f manifests/namespace.yaml
+                    kubectl apply -f manifests/configmap.yaml \
+                      --namespace ${KUBE_NAMESPACE_PROD}
+                    kubectl apply -f manifests/hpa.yaml \
+                      --namespace ${KUBE_NAMESPACE_PROD}
+                """
+
+                script {
+                    if (params.DEPLOY_TARGET != 'scp-only') {
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE_NRF} ${HELM_CHART_NRF} \
+                              --namespace ${KUBE_NAMESPACE_PROD} \
+                              --values ${HELM_CHART_NRF}/values.yaml \
+                              --set image.tag=${params.IMAGE_TAG} \
+                              --wait --timeout 10m \
+                              --atomic          # auto-rollback if deploy fails
+                        """
+                    }
+                    if (params.DEPLOY_TARGET != 'nrf-only') {
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE_SCP} ${HELM_CHART_SCP} \
+                              --namespace ${KUBE_NAMESPACE_PROD} \
+                              --values ${HELM_CHART_SCP}/values.yaml \
+                              --set image.tag=${params.IMAGE_TAG} \
+                              --wait --timeout 10m \
+                              --atomic
+                        """
+                    }
+                }
+                echo "Production deploy complete."
+            }
+        }
+
+        stage('Post-Deploy Verification') {
+            steps {
+                sh """
+                    echo "=== Production Pod Status ==="
+                    kubectl get pods -n ${KUBE_NAMESPACE_PROD} -l sba-component=true
+
+                    echo "=== HPA Status ==="
+                    kubectl get hpa -n ${KUBE_NAMESPACE_PROD}
+
+                    echo "=== Service Endpoints ==="
+                    kubectl get svc -n ${KUBE_NAMESPACE_PROD}
+
+                    echo "=== Helm Release History ==="
+                    helm history ${HELM_RELEASE_NRF} --namespace ${KUBE_NAMESPACE_PROD} --max 3 || true
+                    helm history ${HELM_RELEASE_SCP} --namespace ${KUBE_NAMESPACE_PROD} --max 3 || true
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline completed successfully. NRF and SCP deployed to production."
+        }
+        failure {
+            echo "Pipeline FAILED. Check logs above. Helm atomic flag ensures production was not left in a broken state."
+        }
+        always {
+            // Archive Helm release info for audit trail
+            sh """
+                helm list --all-namespaces | grep -E 'oc-nrf|oc-scp' > helm-releases.txt || true
+                kubectl get events -n ${KUBE_NAMESPACE_PROD} --sort-by='.lastTimestamp' | tail -20 >> helm-releases.txt || true
+            """
+            archiveArtifacts artifacts: 'helm-releases.txt', allowEmptyArchive: true
+        }
+    }
+}

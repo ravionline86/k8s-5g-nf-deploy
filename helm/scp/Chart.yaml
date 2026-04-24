@@ -1,0 +1,26 @@
+apiVersion: v2
+name: oc-scp
+description: >
+  Helm chart for Oracle OC-SCP (Service Communication Proxy) — 5G Core SBA component.
+  Implements Model D indirect communication: routes NF consumer requests via SCP,
+  which performs NRF discovery on behalf of the consumer per 3GPP TS 23.501.
+type: application
+version: 1.0.0
+appVersion: "25.1.200"
+keywords:
+  - 5g
+  - scp
+  - telecom
+  - kubernetes
+  - sba
+  - model-d
+  - 3gpp
+home: https://github.com/ravionline86/k8s-5g-nf-deploy
+sources:
+  - https://github.com/ravionline86/k8s-5g-nf-deploy
+maintainers:
+  - name: Ravinder Kumar
+    email: ravionline86@gmail.com
+annotations:
+  network-function: scp
+  release: OC-SCP-25.1.200

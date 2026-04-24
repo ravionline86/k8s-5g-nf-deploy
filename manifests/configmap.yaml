@@ -1,0 +1,88 @@
+# configmap.yaml
+# Runtime configuration for OC-NRF and OC-SCP Network Functions.
+# In real Oracle OC-NRF/SCP deployments, these parameters are passed via
+# Helm values and mounted into the NF pod at /etc/nf/config/.
+# Here we simulate that pattern using a ConfigMap.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oc-nrf-config
+  namespace: 5g-core
+  labels:
+    app: oc-nrf
+    network-function: nrf
+    project: 5g-nf-deploy
+data:
+  # NRF service configuration
+  NRF_PORT: "8080"
+  NRF_HTTPS_PORT: "8443"
+  NRF_LOG_LEVEL: "INFO"
+
+  # NF profile registration settings (3GPP TS 29.510)
+  NF_HEARTBEAT_INTERVAL: "30"        # seconds between NF heartbeat to NRF
+  NF_REGISTRATION_TTL: "86400"       # NF profile TTL in seconds (24h)
+
+  # Discovery cache settings
+  NRF_CACHE_TTL: "60"                # seconds to cache NF profiles
+  NRF_MAX_NF_PROFILES: "500"         # max NF profiles stored
+
+  nrf.conf: |
+    # Simulated NRF configuration block
+    # In production this would be a structured YAML/JSON config
+    # consumed by the Oracle OC-NRF process
+    server:
+      port: 8080
+      tls_port: 8443
+      log_level: INFO
+    registration:
+      heartbeat_interval_sec: 30
+      profile_ttl_sec: 86400
+    discovery:
+      cache_ttl_sec: 60
+      max_profiles: 500
+    sbi:
+      # Service-Based Interface — NRF exposes Nnrf_NFManagement and Nnrf_NFDiscovery
+      api_prefix: /nnrf-nfm/v1
+      discovery_prefix: /nnrf-disc/v1
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oc-scp-config
+  namespace: 5g-core
+  labels:
+    app: oc-scp
+    network-function: scp
+    project: 5g-nf-deploy
+data:
+  # SCP service configuration (Model D — indirect communication)
+  SCP_PORT: "8080"
+  SCP_LOG_LEVEL: "INFO"
+
+  # NRF endpoint — SCP performs discovery on behalf of NF consumers
+  NRF_ENDPOINT: "http://oc-nrf.5g-core.svc.cluster.local:8080"
+  NRF_DISCOVERY_URI: "/nnrf-disc/v1/nf-instances"
+
+  # Routing and load balancing
+  SCP_LB_POLICY: "round-robin"       # round-robin | least-connections | priority
+  SCP_RETRY_COUNT: "3"
+  SCP_TIMEOUT_MS: "5000"
+
+  scp.conf: |
+    # Simulated SCP configuration block — Model D indirect communication
+    # SCP acts as a transparent proxy + NRF discovery agent
+    server:
+      port: 8080
+      log_level: INFO
+    nrf:
+      endpoint: http://oc-nrf.5g-core.svc.cluster.local:8080
+      discovery_uri: /nnrf-disc/v1/nf-instances
+    routing:
+      lb_policy: round-robin
+      retry_count: 3
+      timeout_ms: 5000
+    # Model D: SCP performs NRF discovery on behalf of NF consumers
+    # NF consumer sends request to SCP → SCP queries NRF → SCP forwards to NF producer
+    model: D

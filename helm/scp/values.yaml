@@ -1,0 +1,102 @@
+# values.yaml — OC-SCP Helm chart defaults
+# SCP is in the critical request path (all NF-to-NF traffic flows through it in Model D)
+# Resources and scaling thresholds are more aggressive than NRF
+
+replicaCount: 2
+
+image:
+  repository: nginx                  # stub image simulating SCP HTTP/2 proxy
+  tag: "1.25-alpine"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: "oc-scp"
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 80
+
+# NRF endpoint — SCP uses this to perform NF discovery on behalf of consumers
+nrf:
+  endpoint: "http://oc-nrf.5g-core.svc.cluster.local:8080"
+  discoveryURI: "/nnrf-disc/v1/nf-instances"
+
+resources:
+  requests:
+    cpu: 500m                          # SCP needs more CPU than NRF (proxy + routing logic)
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6                       # SCP handles all inter-NF traffic, higher ceiling
+  targetCPUUtilizationPercentage: 55   # scale earlier — SCP is latency-sensitive
+  targetMemoryUtilizationPercentage: 65
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 80
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 80
+  initialDelaySeconds: 20
+  periodSeconds: 15
+  failureThreshold: 3
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - oc-scp
+          topologyKey: kubernetes.io/hostname
+
+env:
+  SCP_PORT: "8080"
+  SCP_LOG_LEVEL: "INFO"
+  SCP_LB_POLICY: "round-robin"
+  SCP_RETRY_COUNT: "3"
+  SCP_TIMEOUT_MS: "5000"
+  NRF_ENDPOINT: "http://oc-nrf.5g-core.svc.cluster.local:8080"
+
+configMapRef: oc-scp-config
+
+serviceAccount:
+  create: true
+  name: "oc-scp-sa"
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  path: /metrics
+  port: metrics
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+
+podLabels:
+  network-function: scp
+  sba-component: "true"
+  model-d: "true"
+  release: "25.1.200"

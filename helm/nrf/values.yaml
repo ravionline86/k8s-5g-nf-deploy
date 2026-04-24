@@ -1,0 +1,106 @@
+# values.yaml — OC-NRF Helm chart defaults
+# Override these per environment using:
+#   helm install oc-nrf helm/nrf -f my-env-values.yaml
+
+replicaCount: 2
+
+image:
+  repository: nginx                  # stub image simulating NRF HTTP/2 SBI endpoint
+  tag: "1.25-alpine"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: "oc-nrf"
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 80
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 70
+
+# Readiness probe — K8s will not route traffic to pod until this passes
+# In real OC-NRF, this hits the /nnrf-nfm/v1/nf-instances health endpoint
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 80
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+# Liveness probe — K8s restarts pod if this fails consecutively
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 80
+  initialDelaySeconds: 20
+  periodSeconds: 15
+  failureThreshold: 3
+
+# Pod disruption budget — ensure at least 1 NRF pod stays up during rolling upgrades
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Node affinity — prefer scheduling NRF on nodes with telecom-workload label
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - oc-nrf
+          topologyKey: kubernetes.io/hostname   # spread NRF pods across different nodes
+
+# Environment variables injected into the NRF container
+env:
+  NRF_PORT: "8080"
+  NRF_LOG_LEVEL: "INFO"
+  NF_HEARTBEAT_INTERVAL: "30"
+  NRF_CACHE_TTL: "60"
+
+# ConfigMap reference
+configMapRef: oc-nrf-config
+
+serviceAccount:
+  create: true
+  name: "oc-nrf-sa"
+
+# Prometheus ServiceMonitor (requires Prometheus Operator in cluster)
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  path: /metrics
+  port: metrics
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+
+podLabels:
+  network-function: nrf
+  sba-component: "true"
+  release: "25.1.200"
