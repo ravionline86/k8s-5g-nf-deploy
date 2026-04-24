@@ -1,12 +1,12 @@
 apiVersion: v2
-name: oc-nrf
+name: nrf
 description: >
-  Helm chart for Oracle OC-NRF (Network Repository Function) — 5G Core SBA component.
-  Handles NF profile registration, deregistration, and discovery per 3GPP TS 29.510.
-  Supports Model D indirect communication via OC-SCP.
+  Helm chart for 5G Core NRF (Network Repository Function).
+  Handles NF profile registration, deregistration, and discovery
+  per 3GPP TS 29.510. Supports Model D indirect communication via SCP.
 type: application
 version: 1.0.0
-appVersion: "25.1.200"
+appVersion: "1.0.0"
 keywords:
   - 5g
   - nrf
@@ -14,12 +14,14 @@ keywords:
   - kubernetes
   - sba
   - 3gpp
+  - free5gc
 home: https://github.com/ravionline86/k8s-5g-nf-deploy
 sources:
   - https://github.com/ravionline86/k8s-5g-nf-deploy
+  - https://github.com/free5gc/free5gc
 maintainers:
   - name: Ravinder Kumar
     email: ravionline86@gmail.com
 annotations:
   network-function: nrf
-  release: OC-NRF-25.1.200
+  spec: 3GPP-TS-29.510
