@@ -1,20 +1,17 @@
 {{- if .Values.serviceMonitor.enabled }}
-# ServiceMonitor — Prometheus Operator CRD
-# Tells Prometheus to automatically scrape the OC-NRF metrics endpoint.
-# Requires kube-prometheus-stack or similar Prometheus Operator deployment.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ .Values.fullnameOverride | default "oc-nrf" }}-monitor
+  name: {{ .Values.fullnameOverride | default "nrf" }}-monitor
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ .Values.fullnameOverride | default "oc-nrf" }}
+    app: {{ .Values.fullnameOverride | default "nrf" }}
     network-function: nrf
-    release: prometheus                  # must match Prometheus Operator's serviceMonitorSelector
+    release: prometheus
 spec:
   selector:
     matchLabels:
-      app: {{ .Values.fullnameOverride | default "oc-nrf" }}
+      app: {{ .Values.fullnameOverride | default "nrf" }}
   endpoints:
     - port: metrics
       path: {{ .Values.serviceMonitor.path }}
